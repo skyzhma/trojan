@@ -51,7 +51,6 @@ func Open(options Options) (*DB, error) {
 	}
 
 	return db, nil
-
 }
 
 func (db *DB) Put(key []byte, value []byte) error {
@@ -115,7 +114,55 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	return logRecord.Value, nil
+}
 
+func (db *DB) Delete(key []byte) error {
+	if len(key) == 0 {
+		return ErrKeyIsEmpty
+	}
+
+	if pos := db.index.Get(key); pos == nil {
+		return nil
+	}
+
+	logRecord := &data.LogRecord{Key: key, Type: data.LogRecordDeleted}
+	_, err := db.appendLogRecord(logRecord)
+	if err != nil {
+		return err
+	}
+
+	// delete the key
+	_, isDelete := db.index.Delete(key)
+	if !isDelete {
+		return ErrIndexUpdateFailed
+	}
+
+	return nil
+}
+
+func (db *DB) Close() error {
+
+	// 持久化活跃文件
+	if err := db.activeFile.Sync(); err != nil {
+		return err
+	}
+
+	//	关闭当前活跃文件
+	if err := db.activeFile.Close(); err != nil {
+		return err
+	}
+	// 关闭旧的数据文件
+	for _, file := range db.olderFiles {
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+
+	if err := db.index.Clean(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
@@ -246,10 +293,15 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 			// construct index
 			logRecordPos := &data.LogRecordPos{Fid: fileId, Offset: offset}
+			var ok bool
 			if logRecord.Type == data.LogRecordDeleted {
-				db.index.Delete(logRecord.Key)
+				_, ok = db.index.Delete(logRecord.Key)
 			} else {
-				db.index.Put(logRecord.Key, logRecordPos)
+				ok = db.index.Put(logRecord.Key, logRecordPos)
+			}
+
+			if !ok {
+				return ErrIndexUpdateFailed
 			}
 
 			offset += size

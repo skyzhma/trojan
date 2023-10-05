@@ -52,3 +52,8 @@ func (bt *BTree) Delete(key []byte) (*data.LogRecordPos, bool) {
 	return btreeItem.(*Item).pos, true
 
 }
+
+func (bt *BTree) Clean() error {
+	bt.tree.Clear(false)
+	return nil
+}

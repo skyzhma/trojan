@@ -7,4 +7,9 @@ type IoManager interface {
 	Write([]byte) (int, error)
 	Sync() error
 	Close() error
+	Size() (int64, error)
+}
+
+func NewIoManager(fileName string) (IoManager, error) {
+	return NewFileIoManager(fileName)
 }

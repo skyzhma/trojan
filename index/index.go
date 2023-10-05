@@ -11,6 +11,7 @@ type Indexer interface {
 	Put(key []byte, pos *data.LogRecordPos) bool
 	Get(key []byte) *data.LogRecordPos
 	Delete(key []byte) (*data.LogRecordPos, bool)
+	Clean() error
 }
 
 type IndexerType = int8
