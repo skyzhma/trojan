@@ -93,27 +93,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrKeyNotFound
 	}
 
-	var dataFile *data.DataFile
-	if db.activeFile.FileId == logRecordPos.Fid {
-		dataFile = db.activeFile
-	} else {
-		dataFile = db.olderFiles[logRecordPos.Fid]
-	}
-
-	if dataFile == nil {
-		return nil, ErrDataFileNotFound
-	}
-
-	logRecord, _, err := db.activeFile.ReadLogRecord(logRecordPos.Offset)
-	if err != nil {
-		return nil, err
-	}
-
-	if logRecord.Type == data.LogRecordDeleted {
-		return nil, ErrKeyNotFound
-	}
-
-	return logRecord.Value, nil
+	return db.getValueByPosition(logRecordPos)
 }
 
 func (db *DB) Delete(key []byte) error {
@@ -142,27 +122,95 @@ func (db *DB) Delete(key []byte) error {
 
 func (db *DB) Close() error {
 
-	// 持久化活跃文件
-	if err := db.activeFile.Sync(); err != nil {
-		return err
+	if db.activeFile == nil {
+		return nil
 	}
 
-	//	关闭当前活跃文件
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	if err := db.activeFile.Close(); err != nil {
 		return err
 	}
-	// 关闭旧的数据文件
+
 	for _, file := range db.olderFiles {
 		if err := file.Close(); err != nil {
 			return err
 		}
 	}
 
-	if err := db.index.Clean(); err != nil {
-		return err
+	return nil
+}
+
+func (db *DB) Sync() error {
+	if db.activeFile == nil {
+		return nil
 	}
 
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	return db.activeFile.Sync()
+}
+
+func (db *DB) ListKeys() [][]byte {
+
+	iterator := db.index.Iterator(false)
+	keys := make([][]byte, db.index.Size())
+	var idx int
+	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
+		keys[idx] = iterator.Key()
+		idx++
+	}
+	return keys
+}
+
+func (db *DB) Fold(fn func(key []byte, value []byte) bool) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	iterator := db.index.Iterator(false)
+	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
+		value, err := db.getValueByPosition(iterator.Value())
+		if err != nil {
+			return err
+		}
+
+		if !fn(iterator.Key(), value) {
+			break
+		}
+	}
 	return nil
+}
+
+func (db *DB) getValueByPosition(logRecordPos *data.LogRecordPos) ([]byte, error) {
+	var dataFile *data.DataFile
+	if db.activeFile.FileId == logRecordPos.Fid {
+		dataFile = db.activeFile
+	} else {
+		dataFile = db.olderFiles[logRecordPos.Fid]
+	}
+
+	if dataFile == nil {
+		return nil, ErrDataFileNotFound
+	}
+
+	logRecord, _, err := dataFile.ReadLogRecord(logRecordPos.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	if logRecord.Type == data.LogRecordDeleted {
+		return nil, ErrKeyNotFound
+	}
+
+	return logRecord.Value, nil
+}
+
+func (db *DB) appendLogRecorddWithLock(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.appendLogRecord(logRecord)
 }
 
 func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
