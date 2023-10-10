@@ -11,7 +11,8 @@ type Indexer interface {
 	Put(key []byte, pos *data.LogRecordPos) bool
 	Get(key []byte) *data.LogRecordPos
 	Delete(key []byte) (*data.LogRecordPos, bool)
-	Clean() error
+	Size() int
+	Iterator(reverse bool) Iterator
 }
 
 type IndexerType = int8
@@ -39,4 +40,20 @@ type Item struct {
 
 func (ai *Item) Less(bi btree.Item) bool {
 	return bytes.Compare(ai.key, bi.(*Item).key) == -1
+}
+
+type Iterator interface {
+	Rewind()
+
+	Seek(key []byte)
+
+	Next()
+
+	Valid() bool
+
+	Key() []byte
+
+	Value() *data.LogRecordPos
+
+	Close()
 }

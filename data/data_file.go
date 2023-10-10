@@ -81,7 +81,6 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 	if crc != header.crc {
 		return nil, 0, ErrInvalidCRC
 	}
-
 	return logRecord, recordSize, nil
 }
 
@@ -102,16 +101,8 @@ func (df *DataFile) Close() error {
 	return df.IoManager.Close()
 }
 
-func (df *DataFile) readNBytes(n int64, offset int64) ([]byte, error) {
-
-	b := make([]byte, n)
-
-	_, err := df.IoManager.Read(b, offset)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return b, nil
-
+func (df *DataFile) readNBytes(n int64, offset int64) (b []byte, err error) {
+	b = make([]byte, n)
+	_, err = df.IoManager.Read(b, offset)
+	return
 }

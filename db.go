@@ -178,7 +178,6 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 	encRecord, size := data.EncodeLogRecord(logRecord)
 
 	if db.activeFile.WriteOff+size > db.options.DataFileSize {
-		// 持久化活跃文件
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
 		}
