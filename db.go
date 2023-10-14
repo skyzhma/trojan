@@ -19,6 +19,7 @@ type DB struct {
 	activeFile *data.DataFile
 	olderFiles map[uint32]*data.DataFile
 	index      index.Indexer
+	seqNo      uint64
 }
 
 func Open(options Options) (*DB, error) {
@@ -67,7 +68,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 		Type:  data.LogRecordNormal,
 	}
 
-	pos, err := db.appendLogRecord(logRecord)
+	pos, err := db.appendLogRecorddWithLock(logRecord)
 
 	if err != nil {
 		return err
@@ -106,7 +107,7 @@ func (db *DB) Delete(key []byte) error {
 	}
 
 	logRecord := &data.LogRecord{Key: key, Type: data.LogRecordDeleted}
-	_, err := db.appendLogRecord(logRecord)
+	_, err := db.appendLogRecorddWithLock(logRecord)
 	if err != nil {
 		return err
 	}
@@ -214,8 +215,6 @@ func (db *DB) appendLogRecorddWithLock(logRecord *data.LogRecord) (*data.LogReco
 }
 
 func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
 
 	if db.activeFile == nil {
 		if err := db.setActiveDataFile(); err != nil {

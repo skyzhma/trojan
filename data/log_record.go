@@ -12,6 +12,7 @@ const maxLogRecordHeaderSize = binary.MaxVarintLen32*2 + 5
 const (
 	LogRecordNormal LogRecordType = iota
 	LogRecordDeleted
+	LogRecordTxnFinished
 )
 
 type LogRecord struct {
