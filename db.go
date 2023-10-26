@@ -63,7 +63,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 
 	// LogRecord
 	logRecord := &data.LogRecord{
-		Key:   key,
+		Key:   logRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Value: value,
 		Type:  data.LogRecordNormal,
 	}
@@ -106,7 +106,9 @@ func (db *DB) Delete(key []byte) error {
 		return nil
 	}
 
-	logRecord := &data.LogRecord{Key: key, Type: data.LogRecordDeleted}
+	logRecord := &data.LogRecord{
+		Key:  logRecordKeyWithSeq(key, nonTransactionSeqNo),
+		Type: data.LogRecordDeleted}
 	_, err := db.appendLogRecorddWithLock(logRecord)
 	if err != nil {
 		return err
@@ -316,6 +318,24 @@ func (db *DB) loadIndexFromDataFiles() error {
 		return nil
 	}
 
+	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
+
+		var ok bool
+		if typ == data.LogRecordDeleted {
+			_, ok = db.index.Delete(key)
+		} else {
+			ok = db.index.Put(key, pos)
+		}
+
+		if !ok {
+			panic("failed to initialize index at the begining")
+		}
+
+	}
+
+	transactionRecords := make(map[uint64][]*data.TransactionRecord)
+	var currentSeqNo uint64 = nonTransactionSeqNo
+
 	for _, fid := range db.fileIds {
 		var fileId = uint32(fid)
 		var dataFile *data.DataFile
@@ -339,15 +359,31 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 			// construct index
 			logRecordPos := &data.LogRecordPos{Fid: fileId, Offset: offset}
-			var ok bool
-			if logRecord.Type == data.LogRecordDeleted {
-				_, ok = db.index.Delete(logRecord.Key)
+
+			realKey, seqNo := parseLogRecordKey(logRecord.Key)
+			if seqNo == nonTransactionSeqNo {
+				updateIndex(realKey, logRecord.Type, logRecordPos)
 			} else {
-				ok = db.index.Put(logRecord.Key, logRecordPos)
+				if logRecord.Type == data.LogRecordTxnFinished {
+
+					for _, txnRecord := range transactionRecords[seqNo] {
+						updateIndex(txnRecord.Record.Key, txnRecord.Record.Type, txnRecord.Pos)
+					}
+
+					delete(transactionRecords, seqNo)
+
+				} else {
+					logRecord.Key = realKey
+					transactionRecords[seqNo] = append(transactionRecords[seqNo], &data.TransactionRecord{
+						Record: logRecord,
+						Pos:    logRecordPos,
+					})
+				}
+
 			}
 
-			if !ok {
-				return ErrIndexUpdateFailed
+			if seqNo > currentSeqNo {
+				currentSeqNo = seqNo
 			}
 
 			offset += size
@@ -359,6 +395,8 @@ func (db *DB) loadIndexFromDataFiles() error {
 		}
 
 	}
+
+	db.seqNo = currentSeqNo
 
 	return nil
 

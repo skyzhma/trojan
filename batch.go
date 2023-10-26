@@ -7,6 +7,8 @@ import (
 	"trojan/data"
 )
 
+const nonTransactionSeqNo uint64 = 0
+
 var txnFinKey = []byte("txn-fin")
 
 type WriteBatch struct {
@@ -135,4 +137,10 @@ func logRecordKeyWithSeq(key []byte, seqNo uint64) []byte {
 
 	return encKey
 
+}
+
+func parseLogRecordKey(key []byte) ([]byte, uint64) {
+	seqNo, n := binary.Uvarint(key)
+	realKey := key[n:]
+	return realKey, seqNo
 }

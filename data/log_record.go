@@ -33,6 +33,11 @@ type LogRecordHeader struct {
 	valueSize  uint32
 }
 
+type TransactionRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
+}
+
 func EncodeLogRecord(logRecord *LogRecord) ([]byte, int64) {
 
 	header := make([]byte, maxLogRecordHeaderSize)
