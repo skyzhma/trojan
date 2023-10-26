@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ type DB struct {
 	olderFiles map[uint32]*data.DataFile
 	index      index.Indexer
 	seqNo      uint64
+	isMerging  bool
 }
 
 func Open(options Options) (*DB, error) {
@@ -43,7 +45,15 @@ func Open(options Options) (*DB, error) {
 		index:      index.NewIndexer(options.IndexType),
 	}
 
+	if err := db.loadMergeFiles(); err != nil {
+		return nil, err
+	}
+
 	if err := db.loadDataFiles(); err != nil {
+		return nil, err
+	}
+
+	if err := db.loadIndexFromHintFile(); err != nil {
 		return nil, err
 	}
 
@@ -318,6 +328,21 @@ func (db *DB) loadIndexFromDataFiles() error {
 		return nil
 	}
 
+	hashMerge, nonMergeFileId := false, uint32(0)
+
+	mergeFileName := filepath.Join(db.options.DirPath, data.MergeFinishedFileName)
+
+	if _, err := os.Stat(mergeFileName); err == nil {
+		fid, err := db.getNonMergeFileId(db.options.DirPath)
+		if err != nil {
+			return err
+		}
+
+		hashMerge = true
+		nonMergeFileId = fid
+
+	}
+
 	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
 
 		var ok bool
@@ -338,6 +363,11 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 	for _, fid := range db.fileIds {
 		var fileId = uint32(fid)
+
+		if hashMerge && fileId < nonMergeFileId {
+			continue
+		}
+
 		var dataFile *data.DataFile
 
 		if fileId == db.activeFile.FileId {
