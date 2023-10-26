@@ -223,4 +223,29 @@ func (db *DB) getNonMergeFileId(mergePath string) (uint32, error) {
 
 func (db *DB) loadIndexFromHintFile() error {
 
+	hintFileName := filepath.Join(db.options.DirPath, data.HintFileName)
+	if _, err := os.Stat(hintFileName); os.IsNotExist(err) {
+		return nil
+	}
+
+	hintFile, err := data.OpenHintFile(hintFileName)
+	if err != nil {
+		return err
+	}
+
+	var offset int64 = 0
+	for {
+		logRecord, size, err := hintFile.ReadLogRecord(offset)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		pos := data.DecodeLogRecordPos(logRecord.Value)
+		db.index.Put(logRecord.Key, pos)
+		offset += size
+	}
+	return nil
 }
