@@ -72,6 +72,10 @@ func (art *AdaptiveRadixTree) Iterator(reverse bool) Iterator {
 
 }
 
+func (art *AdaptiveRadixTree) Close() error {
+	return nil
+}
+
 type artIterator struct {
 	currIndex int
 	reverse   bool

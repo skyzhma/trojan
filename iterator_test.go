@@ -20,6 +20,7 @@ func TestDB_NewIterator(t *testing.T) {
 	iterator := db.NewIterator(DefaultIteratorOptions)
 	assert.NotNil(t, iterator)
 	assert.Equal(t, false, iterator.Valid())
+	iterator.Close()
 }
 
 func TestDB_Iterator_One_Value(t *testing.T) {
@@ -41,6 +42,7 @@ func TestDB_Iterator_One_Value(t *testing.T) {
 	val, err := iterator.Value()
 	assert.Nil(t, err)
 	assert.Equal(t, utils.GetTestKey(10), val)
+	iterator.Close()
 }
 
 func TestDB_Iterator_Multi_Values(t *testing.T) {
@@ -63,7 +65,6 @@ func TestDB_Iterator_Multi_Values(t *testing.T) {
 	err = db.Put([]byte("bnede"), utils.RandomValue(10))
 	assert.Nil(t, err)
 
-	// 正向迭代
 	iter1 := db.NewIterator(DefaultIteratorOptions)
 	for iter1.Rewind(); iter1.Valid(); iter1.Next() {
 		assert.NotNil(t, iter1.Key())
@@ -72,8 +73,8 @@ func TestDB_Iterator_Multi_Values(t *testing.T) {
 	for iter1.Seek([]byte("c")); iter1.Valid(); iter1.Next() {
 		assert.NotNil(t, iter1.Key())
 	}
+	iter1.Close()
 
-	// 反向迭代
 	iterOpts1 := DefaultIteratorOptions
 	iterOpts1.Reverse = true
 	iter2 := db.NewIterator(iterOpts1)
@@ -84,12 +85,13 @@ func TestDB_Iterator_Multi_Values(t *testing.T) {
 	for iter2.Seek([]byte("c")); iter2.Valid(); iter2.Next() {
 		assert.NotNil(t, iter2.Key())
 	}
+	iter2.Close()
 
-	// 指定了 prefix
 	iterOpts2 := DefaultIteratorOptions
 	iterOpts2.Prefix = []byte("aee")
 	iter3 := db.NewIterator(iterOpts2)
 	for iter3.Rewind(); iter3.Valid(); iter3.Next() {
 		assert.NotNil(t, iter3.Key())
 	}
+	iter3.Close()
 }

@@ -43,13 +43,13 @@ func TestBTree_Delete(t *testing.T) {
 	res1 := bt.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
 	assert.True(t, res1)
 
-	_, res2 := bt.Delete(nil)
+	res2 := bt.Delete(nil)
 	assert.True(t, res2)
 
 	res3 := bt.Put([]byte("a"), &data.LogRecordPos{Fid: 1, Offset: 2})
 	assert.True(t, res3)
 
-	_, res4 := bt.Delete([]byte("a"))
+	res4 := bt.Delete([]byte("a"))
 	assert.True(t, res4)
 
 }

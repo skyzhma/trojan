@@ -13,15 +13,19 @@ import (
 	"trojan/index"
 )
 
+const seqNoKey = "seq-no"
+
 type DB struct {
-	options    Options
-	fileIds    []int
-	mu         *sync.RWMutex
-	activeFile *data.DataFile
-	olderFiles map[uint32]*data.DataFile
-	index      index.Indexer
-	seqNo      uint64
-	isMerging  bool
+	options         Options
+	fileIds         []int
+	mu              *sync.RWMutex
+	activeFile      *data.DataFile
+	olderFiles      map[uint32]*data.DataFile
+	index           index.Indexer
+	seqNo           uint64
+	isMerging       bool
+	seqNoFileExists bool
+	isInitial       bool
 }
 
 func Open(options Options) (*DB, error) {
@@ -30,19 +34,31 @@ func Open(options Options) (*DB, error) {
 		return nil, err
 	}
 
+	var isInitial bool
+
 	// check whether the datapath exists
 	if _, err := os.Stat(options.DirPath); os.IsNotExist(err) {
-
+		isInitial = true
 		if err := os.MkdirAll(options.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
+	}
+
+	entries, err := os.ReadDir(options.DirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(entries) == 0 {
+		isInitial = true
 	}
 
 	db := &DB{
 		options:    options,
 		mu:         new(sync.RWMutex),
 		olderFiles: make(map[uint32]*data.DataFile),
-		index:      index.NewIndexer(options.IndexType),
+		index:      index.NewIndexer(options.IndexType, options.DirPath, options.SyncWrites),
+		isInitial:  isInitial,
 	}
 
 	if err := db.loadMergeFiles(); err != nil {
@@ -53,12 +69,28 @@ func Open(options Options) (*DB, error) {
 		return nil, err
 	}
 
-	if err := db.loadIndexFromHintFile(); err != nil {
-		return nil, err
-	}
+	if options.IndexType != BPlusTree {
 
-	if err := db.loadIndexFromDataFiles(); err != nil {
-		return nil, err
+		if err := db.loadIndexFromHintFile(); err != nil {
+			return nil, err
+		}
+
+		if err := db.loadIndexFromDataFiles(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := db.loadSeqNo(); err != nil {
+			return nil, err
+		}
+
+		if db.activeFile != nil {
+			size, err := db.activeFile.IoManager.Size()
+			if err != nil {
+				return nil, err
+			}
+
+			db.activeFile.WriteOff = size
+		}
 	}
 
 	return db, nil
@@ -125,7 +157,7 @@ func (db *DB) Delete(key []byte) error {
 	}
 
 	// delete the key
-	_, isDelete := db.index.Delete(key)
+	isDelete := db.index.Delete(key)
 	if !isDelete {
 		return ErrIndexUpdateFailed
 	}
@@ -141,6 +173,31 @@ func (db *DB) Close() error {
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
+
+	if err := db.index.Close(); err != nil {
+		return err
+	}
+
+	seqNoFile, err := data.OpenSeqNoFile(db.options.DirPath)
+
+	if err != nil {
+		return err
+	}
+
+	record := &data.LogRecord{
+		Key:   []byte(seqNoKey),
+		Value: []byte(strconv.FormatUint(db.seqNo, 10)),
+	}
+
+	encRecord, _ := data.EncodeLogRecord(record)
+
+	if err := seqNoFile.Write(encRecord); err != nil {
+		return err
+	}
+
+	if err := seqNoFile.Sync(); err != nil {
+		return err
+	}
 
 	if err := db.activeFile.Close(); err != nil {
 		return err
@@ -183,6 +240,8 @@ func (db *DB) Fold(fn func(key []byte, value []byte) bool) error {
 	defer db.mu.RUnlock()
 
 	iterator := db.index.Iterator(false)
+	defer iterator.Close()
+
 	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
 		value, err := db.getValueByPosition(iterator.Value())
 		if err != nil {
@@ -347,7 +406,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 		var ok bool
 		if typ == data.LogRecordDeleted {
-			_, ok = db.index.Delete(key)
+			ok = db.index.Delete(key)
 		} else {
 			ok = db.index.Put(key, pos)
 		}
@@ -443,4 +502,30 @@ func checkOptions(options Options) error {
 	}
 
 	return nil
+}
+
+func (db *DB) loadSeqNo() error {
+
+	fileName := filepath.Join(db.options.DirPath, data.SeqNoFileName)
+	if _, err := os.Stat(fileName); os.IsNotExist(err) {
+		return nil
+	}
+
+	seqNoFile, err := data.OpenSeqNoFile(fileName)
+
+	if err != nil {
+		return err
+	}
+
+	record, _, err := seqNoFile.ReadLogRecord(0)
+
+	seqNo, err := strconv.ParseUint(string(record.Value), 10, 64)
+
+	if err != nil {
+		return err
+	}
+
+	db.seqNo = seqNo
+	db.seqNoFileExists = true
+	return os.Remove(fileName)
 }
