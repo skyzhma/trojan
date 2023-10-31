@@ -2,6 +2,7 @@ package trojan
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,10 +11,16 @@ import (
 	"strings"
 	"sync"
 	"trojan/data"
+	"trojan/fio"
 	"trojan/index"
+
+	"github.com/gofrs/flock"
 )
 
-const seqNoKey = "seq-no"
+const (
+	seqNoKey     = "seq-no"
+	fileLockName = "fileLock"
+)
 
 type DB struct {
 	options         Options
@@ -26,6 +33,8 @@ type DB struct {
 	isMerging       bool
 	seqNoFileExists bool
 	isInitial       bool
+	fileLock        *flock.Flock
+	bytesWrite      uint
 }
 
 func Open(options Options) (*DB, error) {
@@ -44,6 +53,15 @@ func Open(options Options) (*DB, error) {
 		}
 	}
 
+	fileLock := flock.New(filepath.Join(options.DirPath, fileLockName))
+	hold, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !hold {
+		return nil, ErrDatabaseIsUsed
+	}
+
 	entries, err := os.ReadDir(options.DirPath)
 	if err != nil {
 		return nil, err
@@ -59,6 +77,7 @@ func Open(options Options) (*DB, error) {
 		olderFiles: make(map[uint32]*data.DataFile),
 		index:      index.NewIndexer(options.IndexType, options.DirPath, options.SyncWrites),
 		isInitial:  isInitial,
+		fileLock:   fileLock,
 	}
 
 	if err := db.loadMergeFiles(); err != nil {
@@ -78,6 +97,14 @@ func Open(options Options) (*DB, error) {
 		if err := db.loadIndexFromDataFiles(); err != nil {
 			return nil, err
 		}
+
+		// why reset io type when it's bptree index ?
+		if db.options.MMapAtStart {
+			if err := db.resetIoType(); err != nil {
+				return nil, err
+			}
+		}
+
 	} else {
 		if err := db.loadSeqNo(); err != nil {
 			return nil, err
@@ -166,6 +193,13 @@ func (db *DB) Delete(key []byte) error {
 }
 
 func (db *DB) Close() error {
+
+	defer func() {
+		err := db.fileLock.Unlock()
+		if err != nil {
+			panic(fmt.Sprintf("failed to unlock the directory, %v", err))
+		}
+	}()
 
 	if db.activeFile == nil {
 		return nil
@@ -313,9 +347,19 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 		return nil, err
 	}
 
-	if db.options.SyncWrites {
+	db.bytesWrite += uint(size)
+
+	var needSync = db.options.SyncWrites
+	if !needSync && db.options.BytesPerSync > 0 && db.bytesWrite > db.options.BytesPerSync {
+		needSync = true
+	}
+	if needSync {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
+		}
+
+		if db.bytesWrite > 0 {
+			db.bytesWrite = 0
 		}
 	}
 
@@ -332,7 +376,7 @@ func (db *DB) setActiveDataFile() error {
 		initialFileId = db.activeFile.FileId + 1
 	}
 
-	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId)
+	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId, fio.StandardIO)
 	if err != nil {
 		return err
 	}
@@ -365,7 +409,11 @@ func (db *DB) loadDataFiles() error {
 	db.fileIds = fileIds
 
 	for i, fid := range fileIds {
-		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fid))
+		ioType := fio.StandardIO
+		if db.options.MMapAtStart {
+			ioType = fio.MemoryMap
+		}
+		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fid), ioType)
 		if err != nil {
 			return err
 		}
@@ -528,4 +576,22 @@ func (db *DB) loadSeqNo() error {
 	db.seqNo = seqNo
 	db.seqNoFileExists = true
 	return os.Remove(fileName)
+}
+
+func (db *DB) resetIoType() error {
+	if db.activeFile == nil {
+		return nil
+	}
+
+	if err := db.activeFile.SetIOManager(db.options.DirPath, fio.StandardIO); err != nil {
+		return err
+	}
+
+	for _, dataFile := range db.olderFiles {
+		if err := dataFile.SetIOManager(db.options.DirPath, fio.StandardIO); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
