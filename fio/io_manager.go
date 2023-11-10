@@ -28,5 +28,4 @@ func NewIoManager(fileName string, ioType FileIOType) (IoManager, error) {
 		panic("Unsupported io manager")
 	}
 
-	return NewFileIoManager(fileName)
 }

@@ -225,3 +225,26 @@ func TestDB_FileLock(t *testing.T) {
 	assert.Nil(t, err)
 
 }
+
+func TestDB_Stat(t *testing.T) {
+	opts := DefaultOptions
+	//dir, _ := os.MkdirTemp("", "bitcask-go-stat")
+	dir := "/tmp/trojan-stat"
+	opts.DirPath = dir
+	db, err := Open(opts)
+	defer destroyDB(db)
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+
+	stat := db.Stat()
+	t.Log(stat)
+
+	for i := 0; i < 10; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(1024))
+		assert.Nil(t, err)
+		err = db.Delete(utils.GetTestKey(i))
+		assert.Nil(t, err)
+	}
+
+	assert.NotNil(t, db.Stat())
+}

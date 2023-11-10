@@ -21,11 +21,14 @@ func NewART() *AdaptiveRadixTree {
 	}
 }
 
-func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) bool {
+func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) *data.LogRecordPos {
 	art.lock.Lock()
-	art.tree.Insert(key, pos)
+	oldValue, _ := art.tree.Insert(key, pos)
 	art.lock.Unlock()
-	return true
+	if oldValue == nil {
+		return nil
+	}
+	return oldValue.(*data.LogRecordPos)
 }
 
 func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
@@ -41,13 +44,16 @@ func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
 
 }
 
-func (art *AdaptiveRadixTree) Delete(key []byte) bool {
+func (art *AdaptiveRadixTree) Delete(key []byte) (*data.LogRecordPos, bool) {
 
 	art.lock.Lock()
-	_, deleted := art.tree.Delete(key)
+	oldValue, deleted := art.tree.Delete(key)
 	art.lock.Unlock()
+	if oldValue == nil {
+		return nil, deleted
+	}
 
-	return deleted
+	return oldValue.(*data.LogRecordPos), deleted
 
 }
 

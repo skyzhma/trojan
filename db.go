@@ -13,6 +13,7 @@ import (
 	"trojan/data"
 	"trojan/fio"
 	"trojan/index"
+	"trojan/utils"
 
 	"github.com/gofrs/flock"
 )
@@ -35,6 +36,14 @@ type DB struct {
 	isInitial       bool
 	fileLock        *flock.Flock
 	bytesWrite      uint
+	reclaimSize     int64
+}
+
+type Stat struct {
+	KeyNum          uint
+	DataFileNum     uint
+	ReclaimableSize int64
+	DiskSize        int64
 }
 
 func Open(options Options) (*DB, error) {
@@ -143,8 +152,8 @@ func (db *DB) Put(key []byte, value []byte) error {
 		return err
 	}
 
-	if ok := db.index.Put(key, pos); !ok {
-		return ErrIndexUpdateFailed
+	if oldValue := db.index.Put(key, pos); oldValue != nil {
+		db.reclaimSize += int64(oldValue.Size)
 	}
 
 	return nil
@@ -178,15 +187,20 @@ func (db *DB) Delete(key []byte) error {
 	logRecord := &data.LogRecord{
 		Key:  logRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Type: data.LogRecordDeleted}
-	_, err := db.appendLogRecorddWithLock(logRecord)
+	pos, err := db.appendLogRecorddWithLock(logRecord)
 	if err != nil {
 		return err
 	}
-
+	db.reclaimSize += int64(pos.Size)
 	// delete the key
-	isDelete := db.index.Delete(key)
+
+	oldValue, isDelete := db.index.Delete(key)
 	if !isDelete {
 		return ErrIndexUpdateFailed
+	}
+
+	if oldValue != nil {
+		db.reclaimSize += int64(oldValue.Size)
 	}
 
 	return nil
@@ -255,6 +269,29 @@ func (db *DB) Sync() error {
 	defer db.mu.Unlock()
 
 	return db.activeFile.Sync()
+}
+
+func (db *DB) Stat() *Stat {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	var numDataFiles = uint(len(db.olderFiles))
+	if db.activeFile != nil {
+		numDataFiles += 1
+	}
+
+	diskSize, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to get dir size, %v", err))
+	}
+
+	return &Stat{
+		KeyNum:          uint(db.index.Size()),
+		DataFileNum:     numDataFiles,
+		ReclaimableSize: db.reclaimSize,
+		DiskSize:        diskSize,
+	}
+
 }
 
 func (db *DB) ListKeys() [][]byte {
@@ -363,7 +400,7 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 		}
 	}
 
-	pos := &data.LogRecordPos{Fid: db.activeFile.FileId, Offset: writeOff}
+	pos := &data.LogRecordPos{Fid: db.activeFile.FileId, Offset: writeOff, Size: uint32(size)}
 
 	return pos, nil
 
@@ -452,17 +489,17 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
 
-		var ok bool
+		var oldValue *data.LogRecordPos
 		if typ == data.LogRecordDeleted {
-			ok = db.index.Delete(key)
+			oldValue, _ = db.index.Delete(key)
+			db.reclaimSize += int64(pos.Size)
 		} else {
-			ok = db.index.Put(key, pos)
+			oldValue = db.index.Put(key, pos)
 		}
 
-		if !ok {
-			panic("failed to initialize index at the begining")
+		if oldValue != nil {
+			db.reclaimSize += int64(oldValue.Size)
 		}
-
 	}
 
 	transactionRecords := make(map[uint64][]*data.TransactionRecord)
@@ -495,7 +532,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 			}
 
 			// construct index
-			logRecordPos := &data.LogRecordPos{Fid: fileId, Offset: offset}
+			logRecordPos := &data.LogRecordPos{Fid: fileId, Offset: offset, Size: uint32(size)}
 
 			realKey, seqNo := parseLogRecordKey(logRecord.Key)
 			if seqNo == nonTransactionSeqNo {
@@ -547,6 +584,10 @@ func checkOptions(options Options) error {
 
 	if options.DataFileSize <= 0 {
 		return errors.New("data file size must be greater than 0")
+	}
+
+	if options.DataFileMergeRatio < 0 || options.DataFileMergeRatio > 1 {
+		return errors.New("Invalid data file merge ratio")
 	}
 
 	return nil

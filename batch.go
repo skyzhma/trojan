@@ -117,11 +117,15 @@ func (wb *WriteBatch) Commit() error {
 	}
 
 	for _, record := range wb.pendingWrites {
+		var oldValue *data.LogRecordPos
 		if record.Type == data.LogRecordNormal {
-			wb.db.index.Put(record.Key, positions[string(record.Key)])
+			oldValue = wb.db.index.Put(record.Key, positions[string(record.Key)])
 		}
 		if record.Type == data.LogRecordDeleted {
-			wb.db.index.Delete(record.Key)
+			oldValue, _ = wb.db.index.Delete(record.Key)
+		}
+		if oldValue != nil {
+			wb.db.reclaimSize += int64(oldValue.Size)
 		}
 	}
 

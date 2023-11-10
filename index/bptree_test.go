@@ -17,7 +17,13 @@ func TestBPlusTree_Put(t *testing.T) {
 	}()
 
 	tree := NewBPTree(path, false)
-	tree.Put([]byte("aa"), &data.LogRecordPos{Fid: 1, Offset: 10})
+	res1 := tree.Put([]byte("aa"), &data.LogRecordPos{Fid: 1, Offset: 10})
+	assert.Nil(t, res1)
+
+	res2 := tree.Put([]byte("aa"), &data.LogRecordPos{Fid: 2, Offset: 10})
+	assert.Equal(t, res2.Fid, uint32(1))
+	assert.Equal(t, res2.Offset, int64(10))
+
 	tree.Put([]byte("bb"), &data.LogRecordPos{Fid: 2, Offset: 10})
 	tree.Put([]byte("c"), &data.LogRecordPos{Fid: 3, Offset: 20})
 }
@@ -38,9 +44,12 @@ func TestBPlusTree_Get(t *testing.T) {
 	pos1 := tree.Get([]byte("aa"))
 	assert.NotNil(t, pos1)
 
-	tree.Put([]byte("bb"), &data.LogRecordPos{Fid: 2, Offset: 10})
+	res1 := tree.Put([]byte("aa"), &data.LogRecordPos{Fid: 2, Offset: 10})
+	assert.Equal(t, res1.Fid, uint32(1))
+	assert.Equal(t, res1.Offset, int64(10))
+
 	pos2 := tree.Get([]byte("bb"))
-	assert.NotNil(t, pos2)
+	assert.Nil(t, pos2)
 
 }
 
@@ -53,16 +62,19 @@ func TestBPlusTree_Delete(t *testing.T) {
 
 	tree := NewBPTree(path, false)
 
-	res1 := tree.Delete([]byte("not exist"))
+	pos1, res1 := tree.Delete([]byte("not exist"))
 	assert.False(t, res1)
+	assert.Nil(t, pos1)
 
 	tree.Put([]byte("aa"), &data.LogRecordPos{Fid: 1, Offset: 10})
-	res2 := tree.Delete([]byte("aa"))
+	pos2, res2 := tree.Delete([]byte("aa"))
 	assert.True(t, res2)
+	assert.Equal(t, pos2.Fid, uint32(1))
+	assert.Equal(t, pos2.Offset, int64(10))
 
-	res3 := tree.Delete([]byte("aa"))
-	assert.NotNil(t, res3)
-
+	pos3, res3 := tree.Delete([]byte("aa"))
+	assert.False(t, res3)
+	assert.Nil(t, pos3)
 }
 
 func TestBPlusTree_Size(t *testing.T) {
@@ -78,9 +90,13 @@ func TestBPlusTree_Size(t *testing.T) {
 	res1 := tree.Size()
 	assert.Equal(t, res1, 1)
 
-	_ = tree.Delete([]byte("aa"))
-	res2 := tree.Size()
-	assert.Equal(t, res2, 0)
+	pos2, res2 := tree.Delete([]byte("aa"))
+	assert.True(t, res2)
+	assert.Equal(t, pos2.Fid, uint32(1))
+	assert.Equal(t, pos2.Offset, int64(10))
+
+	res3 := tree.Size()
+	assert.Equal(t, res3, 0)
 
 }
 

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"trojan/data"
+	"trojan/utils"
 )
 
 const (
@@ -24,6 +25,28 @@ func (db *DB) Merge() error {
 	if db.isMerging {
 		db.mu.Unlock()
 		return ErrMergeInProgress
+	}
+
+	totalSize, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+
+	if float32(db.reclaimSize)/float32(totalSize) < db.options.DataFileMergeRatio {
+		db.mu.Unlock()
+		return ErrMergeRatioNotReached
+	}
+
+	diskSize, err := utils.AvailableDiskSize()
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+
+	if uint64(totalSize-db.reclaimSize) >= diskSize {
+		db.mu.Unlock()
+		return ErrNoEnoughSpaceForMerge
 	}
 
 	db.isMerging = true
@@ -172,7 +195,9 @@ func (db *DB) loadMergeFiles() error {
 		if entry.Name() == data.SeqNoFileName {
 			continue
 		}
-
+		if entry.Name() == fileLockName {
+			continue
+		}
 		mergeFileNames = append(mergeFileNames, entry.Name())
 	}
 
