@@ -41,7 +41,6 @@ func TestDB_Merge2(t *testing.T) {
 	err = db.Merge()
 	assert.Nil(t, err)
 
-	//	重启校验
 	err = db.Close()
 	assert.Nil(t, err)
 
@@ -87,7 +86,6 @@ func TestDB_Merge3(t *testing.T) {
 	err = db.Merge()
 	assert.Nil(t, err)
 
-	//	重启校验
 	err = db.Close()
 	assert.Nil(t, err)
 
@@ -133,7 +131,6 @@ func TestDB_Merge4(t *testing.T) {
 	err = db.Merge()
 	assert.Nil(t, err)
 
-	//	重启校验
 	err = db.Close()
 	assert.Nil(t, err)
 
@@ -146,7 +143,6 @@ func TestDB_Merge4(t *testing.T) {
 	assert.Equal(t, 0, len(keys))
 }
 
-// Merge 的过程中有新的数据写入或删除
 func TestDB_Merge5(t *testing.T) {
 	opts := DefaultOptions
 	dir, _ := os.MkdirTemp("", "trojan-merge-5")
@@ -180,7 +176,6 @@ func TestDB_Merge5(t *testing.T) {
 	assert.Nil(t, err)
 	wg.Wait()
 
-	//重启校验
 	err = db.Close()
 	assert.Nil(t, err)
 

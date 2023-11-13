@@ -132,6 +132,12 @@ func Open(options Options) (*DB, error) {
 	return db, nil
 }
 
+func (db *DB) Backup(dir string) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return utils.CopyDir(db.options.DirPath, dir, []string{fileLockName})
+}
+
 func (db *DB) Put(key []byte, value []byte) error {
 
 	// If key is empty
