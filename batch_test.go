@@ -73,11 +73,10 @@ func TestDB_WriteBatch2(t *testing.T) {
 
 func TestDB_WriteBatch3(t *testing.T) {
 	opts := DefaultOptions
-	//dir, _ := os.MkdirTemp("", "trojan-go-wb")
-	dir := "/tmp/batch-test-1"
+	dir, _ := os.MkdirTemp("", "trojan-go-wb")
 	opts.DirPath = dir
 	db, err := Open(opts)
-	//defer destroyDB(db)
+	defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
 
@@ -105,11 +104,10 @@ func TestDB_WriteBatch3(t *testing.T) {
 
 func TestDB_WriteBatch4(t *testing.T) {
 	opts := DefaultOptions
-	//dir, _ := os.MkdirTemp("", "trojan-go-wb")
-	dir := "/tmp/batch-test-3"
+	dir, _ := os.MkdirTemp("", "trojan-go-wb")
 	opts.DirPath = dir
 	db, err := Open(opts)
-	//defer destroyDB(db)
+	defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
 
