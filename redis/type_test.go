@@ -118,3 +118,69 @@ func TestRedisDataStructure_HDel(t *testing.T) {
 	assert.Nil(t, err)
 
 }
+
+func TestRedisDataStructure_SIsMember(t *testing.T) {
+	opts := trojan.DefaultOptions
+	dir, _ := os.MkdirTemp("", "trojan-redis-sismember-test")
+	opts.DirPath = dir
+
+	rds, err := NewRedisDataStructure(opts)
+	assert.Nil(t, err)
+	assert.NotNil(t, rds)
+
+	res1, err := rds.SAdd(utils.GetTestKey(1), []byte("val1"))
+	assert.True(t, res1)
+	assert.Nil(t, err)
+
+	res2, err := rds.SAdd(utils.GetTestKey(1), []byte("val1"))
+	assert.False(t, res2)
+	assert.Nil(t, err)
+
+	res3, err := rds.SAdd(utils.GetTestKey(1), []byte("val2"))
+	assert.True(t, res3)
+	assert.Nil(t, err)
+
+	res4, err := rds.SIsMember(utils.GetTestKey(2), []byte("val1"))
+	assert.False(t, res4)
+	assert.Nil(t, err)
+
+	res5, err := rds.SIsMember(utils.GetTestKey(1), []byte("val1"))
+	assert.True(t, res5)
+	assert.Nil(t, err)
+
+	res6, err := rds.SIsMember(utils.GetTestKey(1), []byte("val2"))
+	assert.True(t, res6)
+	assert.Nil(t, err)
+
+	res7, err := rds.SIsMember(utils.GetTestKey(2), []byte("val-not-exist"))
+	assert.False(t, res7)
+	assert.Nil(t, err)
+
+}
+
+func TestRedisDataStructure_SRem(t *testing.T) {
+	opts := trojan.DefaultOptions
+	dir, _ := os.MkdirTemp("", "trojan-redis-srem-test")
+	opts.DirPath = dir
+
+	rds, err := NewRedisDataStructure(opts)
+	assert.Nil(t, err)
+	assert.NotNil(t, rds)
+
+	res1, err := rds.SAdd(utils.GetTestKey(1), []byte("val1"))
+	assert.True(t, res1)
+	assert.Nil(t, err)
+
+	res2, err := rds.SAdd(utils.GetTestKey(1), []byte("val1"))
+	assert.False(t, res2)
+	assert.Nil(t, err)
+
+	res3, err := rds.SRem(utils.GetTestKey(1), []byte("val1"))
+	assert.True(t, res3)
+	assert.Nil(t, err)
+
+	res4, err := rds.SRem(utils.GetTestKey(1), []byte("val-not"))
+	assert.False(t, res4)
+	assert.Nil(t, err)
+
+}

@@ -175,6 +175,101 @@ func (rds *RedisDataStructure) HDel(key, field []byte) (bool, error) {
 
 }
 
+// ========================== Set ====================================== //
+func (rds *RedisDataStructure) SAdd(key, member []byte) (bool, error) {
+	meta, err := rds.findMetaData(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	sk := &setInternalKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+	}
+
+	var ok bool
+	if _, err = rds.db.Get(sk.encode()); err == trojan.ErrKeyNotFound {
+
+		wb := rds.db.NewWriteBatch(trojan.DefaultWriteBatchOptions)
+		meta.size++
+		_ = wb.Put(key, meta.encode())
+		wb.Put(sk.encode(), nil)
+		if err := wb.Commit(); err != nil {
+			return false, err
+		}
+		ok = true
+
+	}
+
+	return ok, nil
+
+}
+
+func (rds *RedisDataStructure) SIsMember(key, member []byte) (bool, error) {
+
+	meta, err := rds.findMetaData(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	if meta.size == 0 {
+		return false, nil
+	}
+
+	sk := &setInternalKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+	}
+
+	_, err = rds.db.Get(sk.encode())
+	if err != nil && err != trojan.ErrKeyNotFound {
+		return false, err
+	}
+
+	if err == trojan.ErrKeyNotFound {
+		return false, nil
+	}
+
+	return true, nil
+
+}
+
+func (rds *RedisDataStructure) SRem(key, member []byte) (bool, error) {
+
+	meta, err := rds.findMetaData(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	if meta.size == 0 {
+		return false, nil
+	}
+
+	sk := &setInternalKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+	}
+
+	_, err = rds.db.Get(sk.encode())
+	if err == trojan.ErrKeyNotFound {
+		return false, nil
+	}
+
+	wb := rds.db.NewWriteBatch(trojan.DefaultWriteBatchOptions)
+	meta.size--
+	_ = wb.Put(key, meta.encode())
+	wb.Delete(sk.encode())
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+
+}
+
 func (rds *RedisDataStructure) findMetaData(key []byte, dataType redisDataType) (*metaData, error) {
 
 	metaBuf, err := rds.db.Get(key)
