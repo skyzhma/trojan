@@ -270,6 +270,103 @@ func (rds *RedisDataStructure) SRem(key, member []byte) (bool, error) {
 
 }
 
+// ========================== List ====================================== //
+func (rds *RedisDataStructure) LPush(key, element []byte) (uint32, error) {
+
+	return rds.pushInner(key, element, true)
+}
+
+func (rds *RedisDataStructure) RPush(key, element []byte) (uint32, error) {
+
+	return rds.pushInner(key, element, false)
+}
+
+func (rds *RedisDataStructure) LPop(key []byte) ([]byte, error) {
+
+	return rds.popInner(key, true)
+}
+
+func (rds *RedisDataStructure) RPop(key []byte) ([]byte, error) {
+
+	return rds.popInner(key, false)
+}
+
+func (rds *RedisDataStructure) pushInner(key, element []byte, isLeft bool) (uint32, error) {
+
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return 0, err
+	}
+
+	lk := &listInternalKey{
+		key:     key,
+		version: meta.version,
+	}
+
+	if isLeft {
+		lk.index = meta.head - 1
+	} else {
+		lk.index = meta.tail
+	}
+
+	wb := rds.db.NewWriteBatch(trojan.DefaultWriteBatchOptions)
+	meta.size++
+	if isLeft {
+		meta.head--
+	} else {
+		meta.tail++
+	}
+
+	_ = wb.Put(key, meta.encode())
+	wb.Put(lk.encode(), element)
+	if err := wb.Commit(); err != nil {
+		return 0, err
+	}
+
+	return meta.size, nil
+}
+
+func (rds *RedisDataStructure) popInner(key []byte, isLeft bool) ([]byte, error) {
+
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return nil, err
+	}
+
+	if meta.size == 0 {
+		return nil, nil
+	}
+
+	lk := &listInternalKey{
+		key:     key,
+		version: meta.version,
+	}
+
+	if isLeft {
+		lk.index = meta.head
+	} else {
+		lk.index = meta.tail - 1
+	}
+
+	element, err := rds.db.Get(lk.encode())
+	if err != nil {
+		return nil, err
+	}
+
+	meta.size--
+	if isLeft {
+		meta.head++
+	} else {
+		meta.tail--
+	}
+
+	if err = rds.db.Put(key, meta.encode()); err != nil {
+		return nil, err
+	}
+
+	return element, nil
+}
+
 func (rds *RedisDataStructure) findMetaData(key []byte, dataType redisDataType) (*metaData, error) {
 
 	metaBuf, err := rds.db.Get(key)

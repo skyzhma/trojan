@@ -184,3 +184,75 @@ func TestRedisDataStructure_SRem(t *testing.T) {
 	assert.Nil(t, err)
 
 }
+
+func TestRedisDataStructure_Lpop(t *testing.T) {
+	opts := trojan.DefaultOptions
+	dir, _ := os.MkdirTemp("", "trojan-redis-lpop-test")
+	opts.DirPath = dir
+
+	rds, err := NewRedisDataStructure(opts)
+	assert.Nil(t, err)
+	assert.NotNil(t, rds)
+
+	res1, err := rds.LPush(utils.GetTestKey(1), []byte("val1"))
+	t.Log(res1)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, uint32(1))
+
+	res2, err := rds.LPush(utils.GetTestKey(1), []byte("val1"))
+	assert.Nil(t, err)
+	assert.Equal(t, res2, uint32(2))
+
+	res3, err := rds.LPush(utils.GetTestKey(1), []byte("val2"))
+	assert.Nil(t, err)
+	assert.Equal(t, res3, uint32(3))
+
+	val1, err := rds.LPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val1)
+
+	val2, err := rds.LPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val2)
+
+	val3, err := rds.LPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val3)
+
+}
+
+func TestRedisDataStructure_Rpop(t *testing.T) {
+	opts := trojan.DefaultOptions
+	dir, _ := os.MkdirTemp("", "trojan-redis-rpop-test")
+	opts.DirPath = dir
+
+	rds, err := NewRedisDataStructure(opts)
+	assert.Nil(t, err)
+	assert.NotNil(t, rds)
+
+	res1, err := rds.RPush(utils.GetTestKey(1), []byte("val1"))
+	t.Log(res1)
+	assert.Nil(t, err)
+	assert.Equal(t, res1, uint32(1))
+
+	res2, err := rds.RPush(utils.GetTestKey(1), []byte("val1"))
+	assert.Nil(t, err)
+	assert.Equal(t, res2, uint32(2))
+
+	res3, err := rds.RPush(utils.GetTestKey(1), []byte("val2"))
+	assert.Nil(t, err)
+	assert.Equal(t, res3, uint32(3))
+
+	val1, err := rds.RPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val1)
+
+	val2, err := rds.RPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val2)
+
+	val3, err := rds.RPop(utils.GetTestKey(1))
+	assert.Nil(t, err)
+	assert.NotNil(t, val3)
+
+}

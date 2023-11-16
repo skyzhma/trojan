@@ -22,7 +22,7 @@ type metaData struct {
 
 func (md *metaData) encode() []byte {
 	var size = maxMetaDataSize
-	if md.dataType == String {
+	if md.dataType == List {
 		size += extraListMetaSize
 	}
 	buf := make([]byte, size)
@@ -113,6 +113,27 @@ func (sk *setInternalKey) encode() []byte {
 	index += len(sk.member)
 
 	binary.LittleEndian.PutUint32(buf[index:], uint32(len(sk.member)))
+
+	return buf
+}
+
+type listInternalKey struct {
+	key     []byte
+	version int64
+	index   uint64
+}
+
+func (lk *listInternalKey) encode() []byte {
+	buf := make([]byte, len(lk.key)+8+8)
+	var index = 0
+
+	copy(buf[index:], lk.key)
+	index += len(lk.key)
+
+	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(lk.version))
+	index += 8
+
+	binary.LittleEndian.PutUint64(buf[index:], lk.index)
 
 	return buf
 }
