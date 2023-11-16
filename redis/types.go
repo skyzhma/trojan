@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 	"trojan"
+	"trojan/utils"
 )
 
 var (
@@ -365,6 +366,90 @@ func (rds *RedisDataStructure) popInner(key []byte, isLeft bool) ([]byte, error)
 	}
 
 	return element, nil
+}
+
+// ========================== ZSet ====================================== //
+func (rds *RedisDataStructure) ZAdd(key []byte, score float64, member []byte) (bool, error) {
+
+	meta, err := rds.findMetaData(key, ZSet)
+	if err != nil {
+		return false, err
+	}
+
+	zk := &zsetInternalKey{
+		key:     key,
+		version: meta.version,
+		score:   score,
+		member:  member,
+	}
+
+	var exist = true
+	value, err := rds.db.Get(zk.encodeWithMember())
+
+	if err != nil && err != trojan.ErrKeyNotFound {
+		return false, err
+	}
+
+	if err == trojan.ErrKeyNotFound {
+		exist = false
+	}
+
+	if exist {
+		if score == utils.BytesToFloat64(value) {
+			return false, nil
+		}
+	}
+
+	wb := rds.db.NewWriteBatch(trojan.DefaultWriteBatchOptions)
+	if !exist {
+		meta.size++
+		_ = wb.Put(key, meta.encode())
+	}
+
+	if exist {
+		oldKey := &zsetInternalKey{
+			key:     key,
+			version: meta.version,
+			member:  member,
+			score:   utils.BytesToFloat64(value),
+		}
+
+		_ = wb.Delete(oldKey.encodeWithScore())
+	}
+
+	_ = wb.Put(zk.encodeWithMember(), utils.Float64ToBytes(score))
+	_ = wb.Put(zk.encodeWithScore(), nil)
+	if err = wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return !exist, nil
+
+}
+
+func (rds *RedisDataStructure) ZScore(key, member []byte) (float64, error) {
+
+	meta, err := rds.findMetaData(key, ZSet)
+	if err != nil {
+		return -1, err
+	}
+
+	if meta.size == 0 {
+		return -1, nil
+	}
+
+	zk := &zsetInternalKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+	}
+
+	value, err := rds.db.Get(zk.encodeWithMember())
+	if err != nil {
+		return -1, err
+	}
+
+	return utils.BytesToFloat64(value), nil
 }
 
 func (rds *RedisDataStructure) findMetaData(key []byte, dataType redisDataType) (*metaData, error) {

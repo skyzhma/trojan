@@ -256,3 +256,34 @@ func TestRedisDataStructure_Rpop(t *testing.T) {
 	assert.NotNil(t, val3)
 
 }
+
+func TestRedisDataStructure_ZScore(t *testing.T) {
+	opts := trojan.DefaultOptions
+	dir, _ := os.MkdirTemp("", "trojan-redis-zset-test")
+	opts.DirPath = dir
+
+	rds, err := NewRedisDataStructure(opts)
+	assert.Nil(t, err)
+	assert.NotNil(t, rds)
+
+	res1, err := rds.ZAdd(utils.GetTestKey(1), 123, []byte("val1"))
+	assert.Nil(t, err)
+	assert.True(t, res1)
+
+	res2, err := rds.ZAdd(utils.GetTestKey(1), 11, []byte("val1"))
+	assert.Nil(t, err)
+	assert.False(t, res2)
+
+	res3, err := rds.ZAdd(utils.GetTestKey(1), 64, []byte("val2"))
+	assert.Nil(t, err)
+	assert.True(t, res3)
+
+	score1, err := rds.ZScore(utils.GetTestKey(1), []byte("val1"))
+	assert.Nil(t, err)
+	assert.Equal(t, score1, float64(11))
+
+	score2, err := rds.ZScore(utils.GetTestKey(1), []byte("val2"))
+	assert.Nil(t, err)
+	assert.Equal(t, score2, float64(64))
+
+}
